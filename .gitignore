@@ -1,0 +1,12 @@
+node_modules
+dist
+output
+output-web
+uploads
+cdk.out
+.DS_Store
+*.log
+/tmp
+.kiro
+# drawio 拡張の自動バックアップ
+.$*.bkp

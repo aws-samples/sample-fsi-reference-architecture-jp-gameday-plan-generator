@@ -1,0 +1,11 @@
+node_modules
+dist
+output
+output-web
+uploads
+.git
+.kiro
+.DS_Store
+*.log
+infra
+tests
