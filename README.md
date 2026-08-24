@@ -1,5 +1,8 @@
 # GameDay Plan Generator
 
+| 本アセットは、「金融リファレンスアーキテクチャ 日本版 (FSI Reference Architecture JP)」のコンテンツの一部です。<br>金融リファレンスアーキテクチャ日本版 については、同GitHubリポジトリ [aws-samples/sample-fsi-reference-architecture-jp](https://github.com/aws-samples/sample-fsi-reference-architecture-jp) を参照して下さい。 |
+|-|
+
 クラウド環境の構成情報（CloudFormationテンプレート or 構成図）から、GameDay（障害対応訓練）実施計画を自動生成するツール。Amazon Bedrock（Claude Opus 4.x）連携でシナリオを強化します。
 
 > **免責事項**: 本リポジトリはデモンストレーションおよび教育目的のサンプルコードです。本番環境での利用を想定した十分なテスト・セキュリティ強化は行われていません。本番環境へ適用する場合は、利用者自身の責任で追加のセキュリティテストと評価を実施してください。
