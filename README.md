@@ -23,7 +23,26 @@
 ## 動作要件
 
 - Node.js 20+
-- AWS認証情報（Bedrock利用時、`AWS_REGION` も推奨）
+- AI強化機能（追加シナリオ生成・構成図の画像解析など）を使う場合:
+  - **AWS認証情報**: Amazon Bedrock を呼び出せる認証情報が必要です
+  - **IAM権限**: `bedrock:InvokeModel`。本ツールは cross-region inference profile（`us.anthropic.claude-opus-*`）経由で呼び出すため、inference profile と各リージョンの foundation model の両方を許可してください
+    ```json
+    {
+      "Effect": "Allow",
+      "Action": "bedrock:InvokeModel",
+      "Resource": [
+        "arn:aws:bedrock:*:*:inference-profile/us.anthropic.claude-opus-*",
+        "arn:aws:bedrock:*::foundation-model/anthropic.claude-opus-*"
+      ]
+    }
+    ```
+  - **モデルアクセス**: 対象アカウントで Bedrock の Claude Opus 4.x のモデルアクセスが有効化されていること
+  - **`AWS_REGION` の明示**: `us.` 系 inference profile はUSリージョンからの呼び出しが前提です。東京リージョン等の環境（例: ap-northeast-1 の EC2）で実行する場合も、以下のようにUSリージョンを明示してください
+    ```bash
+    export AWS_REGION=us-east-1
+    ```
+
+> AI強化なし（ルールベースのみ）で CloudFormation テンプレートから生成する場合は、AWS認証情報なしでも動作します（構成図の画像解析は Bedrock 必須）。
 
 ## セットアップ
 
@@ -54,20 +73,23 @@ npm run deploy
 ### 2. ローカル Web GUI（開発 / お試し）
 
 ```bash
+export AWS_REGION=us-east-1   # Bedrock（AI強化・構成図解析）を使う場合は必須（動作要件を参照）
 npx tsx src/web/server.ts
 # または PORT=3001 npx tsx src/web/server.ts
 ```
 
 ブラウザで http://localhost:3000 を開き、CFnテンプレートまたは構成図をアップロード。アップロード画面でAIモデル（Claude Opus 4.6 / 4.7 / 4.8）を選択できます。
 
+お試し用の入力ファイル（CFnテンプレート・構成図PNG）を [`samples/`](./samples/) に同梱しています。
+
 ### 3. CLI（バッチ / 自動化）
 
 ```bash
 # 生成（AI強化はデフォルトで有効）
-npx tsx src/cli.ts generate tests/simple-web-template.json
+npx tsx src/cli.ts generate samples/simple-web-template.json
 
 # AI強化を無効化（ルールベースのみ）
-npx tsx src/cli.ts generate tests/simple-web-template.json --no-llm
+npx tsx src/cli.ts generate samples/simple-web-template.json --no-llm
 
 # オプション: 実施時間・参加者数・AIモデル・出力先
 npx tsx src/cli.ts generate template.json \
@@ -94,7 +116,7 @@ CLIでは既定で有効（`--no-llm` で無効化）、Web GUI / AWSデプロ�
 
 使用モデルは Bedrock の Claude Opus 4.x（4.6 / 4.7 / 4.8）から選択。Converse API + cross-region inference profile 経由で呼び出します。デフォルトモデルや model ID は環境変数 `BEDROCK_MODEL_ID` で上書き可能です。
 
-失敗時はルールベース結果にフォールバックするので、Bedrockアクセスがなくても動作します。
+AI強化（上記1〜3）が失敗した場合はルールベース結果にフォールバックするので、Bedrockアクセスがなくても動作します。ただし**構成図（画像）の解析は Bedrock 必須**であり、失敗時はフォールバックせず明示的にエラーになります。
 
 ## テスト
 
@@ -107,8 +129,10 @@ npx vitest --run
 ## プロジェクト構造
 
 ```
+samples/                 # サンプル入力（CFnテンプレート・構成図PNG）
 src/
 ├── cli.ts               # CLIエントリポイント
+├── config/              # 共通設定（AWSリージョン解決）
 ├── parser/              # CloudFormationパーサー
 ├── scenario/            # シナリオ生成（ルールベース）
 │   ├── categories/      # infrastructure/network/data/security/operation

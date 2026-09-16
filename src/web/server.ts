@@ -38,6 +38,7 @@ import {
 } from './session.js';
 import { getOutputStore } from './output-store-factory.js';
 import type { OutputStore } from './output-store.js';
+import { getAwsRegion } from '../config/aws-region.js';
 import {
   createJob,
   getJob,
@@ -54,7 +55,7 @@ function buildFISDeployments(
   scenarios: FailureScenario[],
   sessionId?: string,
 ): FISDeploymentInfo[] {
-  const region = process.env.AWS_REGION ?? 'ap-northeast-1';
+  const region = getAwsRegion();
   const scenarioMap = new Map(scenarios.map(s => [s.id, s]));
   return fisTemplates
     .filter(f => scenarioMap.has(f.scenarioId))
@@ -141,7 +142,7 @@ app.post('/generate', upload.single('file'), async (req, res) => {
     if (!isImage && !isCfn) {
       fs.unlinkSync(file.path);
       res.status(400).send(renderErrorPage(
-        `未対応のファイル形式です: ${ext}\n対応形式: .json, .yaml, .yml, .png, .jpg, .jpeg`
+        `未対応のファイル形式です: ${ext}\n対応形式: .json, .yaml, .yml, .template（CloudFormation） / .png, .jpg, .jpeg, .gif, .webp（構成図）`
       ));
       return;
     }
@@ -466,7 +467,7 @@ async function processGenerateJob(jobId: string, input: GenerateJobInput): Promi
       const modelLabel = SUPPORTED_MODELS[modelKey as keyof typeof SUPPORTED_MODELS]?.label ?? modelKey;
       await updateJobProgress(jobId, {
         step: 'image-conversion',
-        message: `🖼️ 構成図をBedrock (${modelLabel}) で解析中...`,
+        message: `🖼️ 構成図をBedrock (${modelLabel}) で解析中...（目安: 1〜3分）`,
         percent: 15,
       });
       const imageBuffer = fs.readFileSync(filePath);
@@ -505,7 +506,7 @@ async function processGenerateJob(jobId: string, input: GenerateJobInput): Promi
     let advice = '';
     await updateJobProgress(jobId, {
       step: 'ai-enhance',
-      message: `🤖 AIで追加シナリオ + アドバイスを生成中... (${modelKey})`,
+      message: `🤖 AIで追加シナリオ + アドバイスを生成中... (${modelKey})（目安: 3〜8分。進捗率はこの間動きません）`,
       percent: 55,
     });
     const [scenarioResult, adviceResultSettled] = await Promise.allSettled([
@@ -538,7 +539,7 @@ async function processGenerateJob(jobId: string, input: GenerateJobInput): Promi
     // Step 4.5: 各シナリオに rationale を付与
     await updateJobProgress(jobId, {
       step: 'rationales',
-      message: `🧠 各シナリオの「なぜ必要か」を生成中...`,
+      message: `🧠 各シナリオの「なぜ必要か」を生成中...（目安: 1〜3分）`,
       percent: 68,
     });
     try {
@@ -719,7 +720,7 @@ async function applyActions(session: Session, actions: ChatAction[]): Promise<Se
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 
 export function startServer(port: number = PORT): void {
-  app.listen(port, '0.0.0.0', () => {
+  const server = app.listen(port, '0.0.0.0', () => {
     console.log('');
     console.log('  ╔══════════════════════════════════════════════════╗');
     console.log('  ║   🎮  GameDay Plan Generator - Web GUI          ║');
@@ -730,10 +731,18 @@ export function startServer(port: number = PORT): void {
     console.log(`  💾 Output store:   ${process.env.OUTPUT_STORE ?? 'fs'}`);
     console.log('');
     console.log('  対応ファイル:');
-    console.log('    📄 CloudFormation (.json, .yaml, .yml)');
-    console.log('    🖼️  構成図 (.png, .jpg, .jpeg)');
+    console.log('    📄 CloudFormation (.json, .yaml, .yml, .template)');
+    console.log('    🖼️  構成図 (.png, .jpg, .jpeg, .gif, .webp)');
     console.log('');
   });
+
+  // ── HTTPタイムアウト設定（Nodeデフォルト値への依存を排除） ──
+  // 生成処理自体はジョブ化されておりHTTPリクエストを長時間占有しないが、
+  // SSE(進捗ストリーム)やアップロードがあるため明示的に設定する。
+  server.requestTimeout = 5 * 60 * 1000; // リクエスト受信全体: 5分（大きめのアップロード考慮）
+  server.headersTimeout = 60 * 1000; // ヘッダー受信: 60秒
+  server.keepAliveTimeout = 65 * 1000; // Keep-Alive: ALB等のidle timeout(60秒)より長く
+  server.timeout = 0; // ソケット無通信タイムアウトは無効（SSE長時間接続のため）
 }
 
 startServer();

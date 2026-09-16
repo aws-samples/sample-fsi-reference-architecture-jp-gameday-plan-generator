@@ -1,6 +1,6 @@
 {
   "name": "gameday-plan-generator",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "description": "クラウド環境の構成情報からGameDay実施計画を自動生成するCLIツール",
   "type": "module",
   "scripts": {
@@ -20,6 +20,7 @@
     "@aws-sdk/client-s3": "^3.1045.0",
     "@aws-sdk/lib-dynamodb": "^3.1045.0",
     "@aws-sdk/s3-request-presigner": "^3.1045.0",
+    "@smithy/node-http-handler": "^4.12.1",
     "@types/archiver": "^7.0.0",
     "archiver": "^7.0.1",
     "commander": "^12.1.0",

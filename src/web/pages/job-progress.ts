@@ -23,7 +23,8 @@ h1{font-size:22px;font-weight:700;margin-bottom:8px;color:#000716}
 .progress-fill{height:100%;background:linear-gradient(90deg,#0972d3,#539fe5);transition:width .4s ease;border-radius:12px;position:relative}
 .progress-fill::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.4),transparent);animation:shimmer 2s infinite}
 @keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
-.progress-percent{font-size:12px;color:#5f6b7a;text-align:right;margin-bottom:20px}
+.progress-percent{font-size:12px;color:#5f6b7a;text-align:right;margin-bottom:4px}
+.elapsed{font-size:12px;color:#5f6b7a;text-align:right;margin-bottom:20px;font-variant-numeric:tabular-nums}
 .step{display:flex;align-items:center;gap:12px;padding:12px;background:#f2f8fd;border-radius:8px;margin-bottom:8px;border-left:3px solid #0972d3}
 .step-icon{font-size:18px}
 .step-text{font-size:14px;color:#000716;font-weight:500}
@@ -52,6 +53,7 @@ h1{font-size:22px;font-weight:700;margin-bottom:8px;color:#000716}
     <div class="progress-fill" id="bar" style="width:0%"></div>
   </div>
   <div class="progress-percent" id="percent">0%</div>
+  <div class="elapsed" id="elapsed">経過時間 0:00</div>
 
   <div class="step" id="currentStep">
     <span class="step-icon"><span class="spinner"></span></span>
@@ -80,6 +82,26 @@ h1{font-size:22px;font-weight:700;margin-bottom:8px;color:#000716}
   var errorBox = document.getElementById('errorBox');
   var errorText = document.getElementById('errorText');
   var actions = document.getElementById('actions');
+  var elapsedEl = document.getElementById('elapsed');
+
+  // 経過時間表示（処理が動いていることを利用者が確認できるように毎秒更新）
+  var startTime = Date.now();
+  var stepStartTime = Date.now();
+  var lastStep = null;
+  function fmtDuration(ms){
+    var s = Math.floor(ms / 1000);
+    var m = Math.floor(s / 60);
+    s = s % 60;
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+  var elapsedTimer = setInterval(function(){
+    elapsedEl.textContent = '経過時間 ' + fmtDuration(Date.now() - startTime)
+      + '（現在のステップ ' + fmtDuration(Date.now() - stepStartTime) + '）';
+  }, 1000);
+  function stopElapsed(){
+    clearInterval(elapsedTimer);
+    elapsedEl.textContent = '経過時間 ' + fmtDuration(Date.now() - startTime);
+  }
 
   function addLog(msg, cls){
     var line = document.createElement('div');
@@ -94,6 +116,10 @@ h1{font-size:22px;font-weight:700;margin-bottom:8px;color:#000716}
 
   es.addEventListener('progress', function(e){
     var data = JSON.parse(e.data);
+    if (data.step !== lastStep) {
+      lastStep = data.step;
+      stepStartTime = Date.now();
+    }
     bar.style.width = data.percent + '%';
     percent.textContent = data.percent + '%';
     stepMessage.textContent = data.message;
@@ -102,6 +128,7 @@ h1{font-size:22px;font-weight:700;margin-bottom:8px;color:#000716}
 
   es.addEventListener('completed', function(e){
     var data = JSON.parse(e.data);
+    stopElapsed();
     bar.style.width = '100%';
     percent.textContent = '100%';
     stepMessage.textContent = '✅ 完了 — リダイレクト中...';
@@ -114,6 +141,7 @@ h1{font-size:22px;font-weight:700;margin-bottom:8px;color:#000716}
 
   es.addEventListener('failed', function(e){
     var data = JSON.parse(e.data);
+    stopElapsed();
     stepMessage.textContent = '❌ 失敗';
     addLog('エラー: ' + data.error, 'error');
     errorText.textContent = data.error;

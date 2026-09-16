@@ -14,6 +14,8 @@ import {
   type InferenceConfiguration,
   type ConverseCommandOutput,
 } from '@aws-sdk/client-bedrock-runtime';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
+import { getAwsRegion } from '../config/aws-region.js';
 
 // ── 設定 ──
 
@@ -25,7 +27,15 @@ import {
 // 推測で揃えず、必ず `aws bedrock-runtime converse` で実機確認すること。
 /** デフォルトのモデルID（環境変数で上書き可） */
 const DEFAULT_MODEL_ID = process.env.BEDROCK_MODEL_ID ?? 'us.anthropic.claude-opus-4-6-v1';
-const REGION = process.env.AWS_REGION ?? 'us-east-1';
+
+// ── タイムアウト・リトライ設定 ──
+// 生成系の呼び出しは数分かかるため、SDKデフォルト値に依存せず明示する。
+/** 接続確立タイムアウト (ms) */
+const CONNECTION_TIMEOUT_MS = 10_000;
+/** レスポンス完了までのタイムアウト (ms)。長文生成があるため15分 */
+const REQUEST_TIMEOUT_MS = 15 * 60 * 1000;
+/** リトライ回数（初回 + 1リトライ）。長時間処理のため無闇に再試行しない */
+const MAX_ATTEMPTS = 2;
 
 /** UIから選択可能なモデル一覧 */
 export const SUPPORTED_MODELS = {
@@ -104,7 +114,14 @@ let clientInstance: BedrockRuntimeClient | null = null;
 
 function getClient(): BedrockRuntimeClient {
   if (!clientInstance) {
-    clientInstance = new BedrockRuntimeClient({ region: REGION });
+    clientInstance = new BedrockRuntimeClient({
+      region: getAwsRegion(),
+      maxAttempts: MAX_ATTEMPTS,
+      requestHandler: new NodeHttpHandler({
+        connectionTimeout: CONNECTION_TIMEOUT_MS,
+        requestTimeout: REQUEST_TIMEOUT_MS,
+      }),
+    });
   }
   return clientInstance;
 }

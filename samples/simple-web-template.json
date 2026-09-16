@@ -1,0 +1,178 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Sample 3-tier web application for GameDay Plan Generator - ALB + EC2 (Multi-AZ) + RDS MySQL (Multi-AZ) + S3",
+  "Resources": {
+    "VPC": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "CidrBlock": "10.0.0.0/16",
+        "EnableDnsSupport": true,
+        "EnableDnsHostnames": true,
+        "Tags": [
+          { "Key": "Name", "Value": "sample-web-vpc" },
+          { "Key": "Environment", "Value": "production" }
+        ]
+      }
+    },
+    "PublicSubnet1": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": { "Ref": "VPC" },
+        "CidrBlock": "10.0.0.0/24",
+        "AvailabilityZone": { "Fn::Select": [0, { "Fn::GetAZs": "" }] },
+        "MapPublicIpOnLaunch": true,
+        "Tags": [{ "Key": "Name", "Value": "public-subnet-1" }]
+      }
+    },
+    "PublicSubnet2": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": { "Ref": "VPC" },
+        "CidrBlock": "10.0.1.0/24",
+        "AvailabilityZone": { "Fn::Select": [1, { "Fn::GetAZs": "" }] },
+        "MapPublicIpOnLaunch": true,
+        "Tags": [{ "Key": "Name", "Value": "public-subnet-2" }]
+      }
+    },
+    "PrivateSubnet1": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": { "Ref": "VPC" },
+        "CidrBlock": "10.0.10.0/24",
+        "AvailabilityZone": { "Fn::Select": [0, { "Fn::GetAZs": "" }] },
+        "Tags": [{ "Key": "Name", "Value": "private-subnet-1" }]
+      }
+    },
+    "PrivateSubnet2": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": { "Ref": "VPC" },
+        "CidrBlock": "10.0.11.0/24",
+        "AvailabilityZone": { "Fn::Select": [1, { "Fn::GetAZs": "" }] },
+        "Tags": [{ "Key": "Name", "Value": "private-subnet-2" }]
+      }
+    },
+    "ALBSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Allow HTTP/HTTPS from the Internet",
+        "VpcId": { "Ref": "VPC" },
+        "SecurityGroupIngress": [
+          { "IpProtocol": "tcp", "FromPort": 80, "ToPort": 80, "CidrIp": "0.0.0.0/0" },
+          { "IpProtocol": "tcp", "FromPort": 443, "ToPort": 443, "CidrIp": "0.0.0.0/0" }
+        ]
+      }
+    },
+    "WebSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Allow HTTP from ALB only",
+        "VpcId": { "Ref": "VPC" },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 80,
+            "ToPort": 80,
+            "SourceSecurityGroupId": { "Ref": "ALBSecurityGroup" }
+          }
+        ]
+      }
+    },
+    "DBSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Allow MySQL from web servers only",
+        "VpcId": { "Ref": "VPC" },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 3306,
+            "ToPort": 3306,
+            "SourceSecurityGroupId": { "Ref": "WebSecurityGroup" }
+          }
+        ]
+      }
+    },
+    "ApplicationLoadBalancer": {
+      "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+      "Properties": {
+        "Name": "sample-web-alb",
+        "Scheme": "internet-facing",
+        "Type": "application",
+        "Subnets": [{ "Ref": "PublicSubnet1" }, { "Ref": "PublicSubnet2" }],
+        "SecurityGroups": [{ "Ref": "ALBSecurityGroup" }],
+        "Tags": [{ "Key": "Name", "Value": "sample-web-alb" }]
+      }
+    },
+    "WebServer1": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "InstanceType": "t3.medium",
+        "ImageId": "ami-0abcdef1234567890",
+        "SubnetId": { "Ref": "PrivateSubnet1" },
+        "SecurityGroupIds": [{ "Ref": "WebSecurityGroup" }],
+        "Tags": [
+          { "Key": "Name", "Value": "web-server-1" },
+          { "Key": "Environment", "Value": "production" }
+        ]
+      }
+    },
+    "WebServer2": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "InstanceType": "t3.medium",
+        "ImageId": "ami-0abcdef1234567890",
+        "SubnetId": { "Ref": "PrivateSubnet2" },
+        "SecurityGroupIds": [{ "Ref": "WebSecurityGroup" }],
+        "Tags": [
+          { "Key": "Name", "Value": "web-server-2" },
+          { "Key": "Environment", "Value": "production" }
+        ]
+      }
+    },
+    "DBSubnetGroup": {
+      "Type": "AWS::RDS::DBSubnetGroup",
+      "Properties": {
+        "DBSubnetGroupDescription": "Subnets for the primary database",
+        "SubnetIds": [{ "Ref": "PrivateSubnet1" }, { "Ref": "PrivateSubnet2" }]
+      }
+    },
+    "PrimaryDatabase": {
+      "Type": "AWS::RDS::DBInstance",
+      "Properties": {
+        "DBInstanceClass": "db.t3.medium",
+        "Engine": "mysql",
+        "MasterUsername": "admin",
+        "MasterUserPassword": "{{resolve:secretsmanager:sample-db-password}}",
+        "MultiAZ": true,
+        "StorageEncrypted": true,
+        "AllocatedStorage": 50,
+        "BackupRetentionPeriod": 7,
+        "DBSubnetGroupName": { "Ref": "DBSubnetGroup" },
+        "VPCSecurityGroups": [{ "Ref": "DBSecurityGroup" }],
+        "Tags": [
+          { "Key": "Name", "Value": "primary-database" },
+          { "Key": "Environment", "Value": "production" }
+        ]
+      },
+      "DependsOn": ["WebServer1", "WebServer2"]
+    },
+    "StaticAssetsBucket": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            { "ServerSideEncryptionByDefault": { "SSEAlgorithm": "AES256" } }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "Tags": [{ "Key": "Name", "Value": "static-assets" }]
+      }
+    }
+  }
+}
