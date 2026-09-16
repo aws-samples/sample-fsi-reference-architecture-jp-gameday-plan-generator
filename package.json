@@ -27,7 +27,7 @@
     "express": "^4.21.0",
     "handlebars": "^4.7.8",
     "js-yaml": "^4.1.0",
-    "multer": "^2.2.0",
+    "multer": "^2.3.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
