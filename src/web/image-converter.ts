@@ -1,7 +1,7 @@
 /**
  * 構成図 → CloudFormation JSON 変換モジュール
  *
- * Amazon Bedrock Converse API (Claude Opus 4.x) を使用して
+ * Amazon Bedrock Converse API（GPT-5.6 / Claude 5.5）を使用して
  * 構成図画像を解析し、CloudFormation JSONテンプレートに変換する。
  *
  * Bedrock連携が失敗した場合は明示的にエラーを返す。
@@ -29,7 +29,10 @@ const SYSTEM_PROMPT = `あなたはAWSアーキテクチャの専門家です。
 - 暗号化設定がある場合は StorageEncrypted, KmsKeyId 等を設定
 - タグ（Name, Environment等）を付与
 - 出力はJSON形式のみ。マークダウンのコードブロックで囲まないこと
-- 不明な部分は一般的なベストプラクティスに基づいて補完`;
+- 不明な部分は一般的なベストプラクティスに基づいて補完
+- 簡潔さを優先: 各リソースは構成の把握に必要な主要プロパティのみ記述し、
+  省略可能なプロパティ（詳細なパラメータ群、冗長なポリシー文、コメント的な記述）は書かないこと。
+  このテンプレートは障害シナリオ分析の入力であり、デプロイ可能性の完全性は求めない`;
 
 /**
  * 構成図画像をCloudFormation JSONに変換する
@@ -52,10 +55,12 @@ export async function convertImageToCfn(
       return result;
     }
     console.log(`    ❌ Bedrock解析失敗: ${result.error}`);
-    return {
-      ok: false,
-      error: `${result.error}\nBedrock（Claude Opus）へのアクセス権限とモデルアクセス有効化、AWS_REGION の設定を確認してください。`,
-    };
+    // API エラー（権限・リージョン起因）のときだけ設定確認を促す。
+    // 出力打ち切りや JSON 不正はモデル出力の問題なので、設定確認の案内は誤誘導になる。
+    const hint = result.error.startsWith('Bedrock API エラー')
+      ? '\nBedrock へのアクセス権限、選択モデルのモデルアクセス有効化、AWS_REGION の設定を確認してください。'
+      : '';
+    return { ok: false, error: `${result.error}${hint}` };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.log(`    ❌ Bedrock接続エラー: ${msg}`);
@@ -95,7 +100,9 @@ async function invokeBedrockConverse(
         ],
       },
     ],
-    maxTokens: 16384,
+    // 詳細に記述するモデル（Claude Opus 5.5 等）が 16K で打ち切られた実績があるため余裕を持たせる。
+    // 実際の上限は bedrock-client 側でモデルごとにクランプされる。
+    maxTokens: 32768,
     temperature: 0.2,
     model: modelKey,
   });

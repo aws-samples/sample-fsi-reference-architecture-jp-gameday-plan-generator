@@ -1,7 +1,7 @@
 /**
  * Amazon Bedrock Converse API クライアント
  *
- * Claude Opus 4.6 (1M context) を使用した共通LLMクライアント。
+ * Claude（Anthropic）/ GPT（OpenAI）の複数モデルを切り替えられる共通LLMクライアント。
  * 画像解析・テキスト分析の両方に対応。
  */
 
@@ -19,12 +19,9 @@ import { getAwsRegion } from '../config/aws-region.js';
 
 // ── 設定 ──
 
-// 注意: モデルIDのバージョンsuffix（-v1）はバージョンごとに付与規則が異なる。
-// us-west-2 で動作確認した正しい inference profile ID:
-//   4.6 → us.anthropic.claude-opus-4-6-v1   (-v1 が必要)
-//   4.7 → us.anthropic.claude-opus-4-7       (-v1 なし)
-//   4.8 → us.anthropic.claude-opus-4-8       (-v1 なし)
-// 推測で揃えず、必ず `aws bedrock-runtime converse` で実機確認すること。
+// 注意: モデルIDの命名規則はモデル・世代ごとに異なる（-v1 の有無、日付suffix等）。
+// 以下は us-west-2 で実機確認済みの cross-region inference profile ID（2026-09）。
+// 新モデルを追加する際は推測で揃えず、必ず `aws bedrock-runtime converse` で実機確認すること。
 /** デフォルトのモデルID（環境変数で上書き可） */
 const DEFAULT_MODEL_ID = process.env.BEDROCK_MODEL_ID ?? 'us.anthropic.claude-opus-4-6-v1';
 
@@ -37,49 +34,87 @@ const REQUEST_TIMEOUT_MS = 15 * 60 * 1000;
 /** リトライ回数（初回 + 1リトライ）。長時間処理のため無闇に再試行しない */
 const MAX_ATTEMPTS = 2;
 
-/** UIから選択可能なモデル一覧 */
+/**
+ * UIから選択可能なモデル一覧
+ *
+ * サンプル構成図2枚での実測（us-west-2, 2026-09）に基づく選定。
+ * リソース認識精度は全モデル同等だったため、速度と記述の緻密さで使い分ける。
+ */
 export const SUPPORTED_MODELS = {
+  // 既定。ハンズオン手順書との互換性維持のため据え置き（既定の変更はいつでも可能）。
+  // 注意: ID は -v1 suffix が必要（4.6 のみの命名規則）。
   'claude-opus-4-6': {
     id: 'us.anthropic.claude-opus-4-6-v1',
     label: 'Claude Opus 4.6',
-    description: 'バランス型・長文コンテキスト 1M tokens',
+    description: '既定・従来モデル（構成図解析 30〜90秒）',
+    maxOutputTokens: 128_000,
   },
-  'claude-opus-4-7': {
-    id: 'us.anthropic.claude-opus-4-7',
-    label: 'Claude Opus 4.7',
-    description: '推論性能向上',
+  'gpt-5.6-terra': {
+    id: 'us.openai.gpt-5.6-terra',
+    label: 'GPT-5.6 terra',
+    description: 'バランス型・高速（構成図解析 40〜50秒）',
+    maxOutputTokens: 131_072,
   },
-  'claude-opus-4-8': {
-    id: 'us.anthropic.claude-opus-4-8',
-    label: 'Claude Opus 4.8',
-    description: '最新・1M context・推論強化',
+  'gpt-5.6-luna': {
+    id: 'us.openai.gpt-5.6-luna',
+    label: 'GPT-5.6 luna',
+    description: '高速・軽量（構成図解析 30〜40秒）',
+    maxOutputTokens: 131_072,
+  },
+  'gpt-5.6-sol': {
+    id: 'us.openai.gpt-5.6-sol',
+    label: 'GPT-5.6 sol',
+    description: '高性能（構成図解析 60〜80秒）',
+    maxOutputTokens: 131_072,
+  },
+  'claude-sonnet-5-5': {
+    id: 'us.anthropic.claude-sonnet-5-5',
+    label: 'Claude Sonnet 5.5',
+    description: 'バランス型（構成図解析 50〜100秒）',
+    maxOutputTokens: 128_000,
+  },
+  'claude-opus-5-5': {
+    id: 'us.anthropic.claude-opus-5-5',
+    label: 'Claude Opus 5.5',
+    description: '最高品質・低速（構成図解析 100秒以上）・記述が詳細',
+    maxOutputTokens: 128_000,
   },
 } as const;
 
 export type SupportedModelKey = keyof typeof SUPPORTED_MODELS;
 
-/** モデルキー（"claude-opus-4-6"等）からBedrock model ID に解決 */
+/** UI/CLI 既定のモデルキー */
+export const DEFAULT_MODEL_KEY: SupportedModelKey = 'claude-opus-4-6';
+
+/** モデルキー（"gpt-5.6-terra"等）からBedrock model ID に解決 */
 export function resolveModelId(key?: string | null): string {
   if (!key) return DEFAULT_MODEL_ID;
   const model = SUPPORTED_MODELS[key as SupportedModelKey];
   return model?.id ?? DEFAULT_MODEL_ID;
 }
 
+/** 文字列が生の Bedrock model ID（inference profile ID 含む）かどうか */
+export function isRawModelId(value: string): boolean {
+  return /^(us|global|eu|apac|jp)\.|^(anthropic|openai)\./.test(value);
+}
+
 /**
  * モデルが Converse の `temperature` パラメータをサポートするか判定する。
  *
- * Claude Opus 4.7 以降は `temperature` が廃止され、送ると
- * ValidationException ("temperature is deprecated for this model") になる。
- * 4.6 系（-v1）のみ temperature を受け付ける。
- *
- * 判定は実機検証済み（us-west-2, 2026-06）:
- *   us.anthropic.claude-opus-4-6-v1 → temperature OK
- *   us.anthropic.claude-opus-4-7    → temperature 不可
- *   us.anthropic.claude-opus-4-8    → temperature 不可
+ * Claude Opus 4.6 系のみ対応。それ以降の Claude（4.7+, 5.x）と GPT-5.6 系は
+ * `temperature` 非対応で、送ると ValidationException になる（実機検証済み: us-west-2, 2026-09）。
+ * 将来モデルは原則 temperature 非対応とみなす安全側デフォルト。
  */
 export function supportsTemperature(modelId: string): boolean {
-  // 4.6 系のみ許可（将来モデルは原則 temperature 非対応とみなす安全側デフォルト）
   return /claude-opus-4-6/.test(modelId);
+}
+
+/** モデルの最大出力トークン数（不明なモデルは安全側に 8192） */
+export function maxOutputTokensOf(modelId: string): number {
+  for (const m of Object.values(SUPPORTED_MODELS)) {
+    if (m.id === modelId) return m.maxOutputTokens;
+  }
+  return 8192;
 }
 
 // ── 型定義 ──
@@ -89,7 +124,7 @@ export interface LLMRequest {
   messages: LLMMessage[];
   maxTokens?: number;
   temperature?: number;
-  /** モデルキー（"claude-opus-4-6"等）またはBedrock model ID。未指定時はデフォルト */
+  /** モデルキー（"gpt-5.6-terra"等）またはBedrock model ID。未指定時はデフォルト */
   model?: string;
 }
 
@@ -146,17 +181,14 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResult> {
   try {
     // モデルID解決: キー指定なら resolveModelId、生のIDが入っていればそのまま
     const modelId = request.model
-      ? (request.model.startsWith('us.') || request.model.startsWith('anthropic.')
-          ? request.model
-          : resolveModelId(request.model))
+      ? (isRawModelId(request.model) ? request.model : resolveModelId(request.model))
       : DEFAULT_MODEL_ID;
 
     // inference config を組み立てる。
-    // 注意: Claude Opus 4.7 以降は `temperature` パラメータが廃止されており、
-    // 送ると ValidationException ("temperature is deprecated for this model") になる。
-    // temperature 非対応モデルには付与しない。
+    // - maxTokens はモデルの上限を超えないようにクランプする（超えると ValidationException）
+    // - 現行モデルは `temperature` 非対応（送ると ValidationException）のため付与しない
     const inferenceConfig: InferenceConfiguration = {
-      maxTokens: request.maxTokens ?? 8192,
+      maxTokens: Math.min(request.maxTokens ?? 8192, maxOutputTokensOf(modelId)),
     };
     if (supportsTemperature(modelId)) {
       inferenceConfig.temperature = request.temperature ?? 0.3;
@@ -170,6 +202,18 @@ export async function invokeLLM(request: LLMRequest): Promise<LLMResult> {
     });
 
     const response: ConverseCommandOutput = await client.send(command);
+
+    // 出力トークン上限で打ち切られた場合は、途中で切れた本文を返さず明示エラーにする。
+    // （切れたJSONを下流でパースすると「有効なJSONではありません」という誤った原因が
+    //   表示されてしまうため、ここで原因を特定して伝える）
+    if (response.stopReason === 'max_tokens') {
+      return {
+        ok: false,
+        error:
+          `モデルの出力が最大トークン数（${inferenceConfig.maxTokens}）に達し、途中で打ち切られました。` +
+          '入力を簡素化するか、別のモデルを選択してください。',
+      };
+    }
 
     // レスポンスからテキストを抽出
     const outputMessage = response.output?.message;

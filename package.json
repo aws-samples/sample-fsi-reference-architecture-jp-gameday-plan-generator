@@ -1,6 +1,6 @@
 {
   "name": "gameday-plan-generator",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "クラウド環境の構成情報からGameDay実施計画を自動生成するCLIツール",
   "type": "module",
   "scripts": {

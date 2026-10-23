@@ -23,7 +23,7 @@ import { generateEvaluationCriteria } from '../evaluation/index.js';
 import { generate as generateDashboard } from '../dashboard/index.js';
 import { convertImageToCfn } from './image-converter.js';
 import { generateLLMScenarios, generateAdvice, generateRationales } from '../llm/scenario-enhancer.js';
-import { SUPPORTED_MODELS } from '../llm/bedrock-client.js';
+import { SUPPORTED_MODELS, DEFAULT_MODEL_KEY } from '../llm/bedrock-client.js';
 import { processChatMessage, type ChatAction } from '../llm/chat-editor.js';
 import { renderUploadPage } from './pages/upload.js';
 import { renderErrorPage } from './pages/error.js';
@@ -133,7 +133,7 @@ app.post('/generate', upload.single('file'), async (req, res) => {
     const file = req.file;
     const duration = (req.body?.duration ?? 'full-day') as PlanOptions['duration'];
     const participantCount = parseInt(req.body?.participants ?? '6', 10);
-    const modelKey = String(req.body?.model ?? 'claude-opus-4-6');
+    const modelKey = String(req.body?.model ?? DEFAULT_MODEL_KEY);
 
     const ext = path.extname(file.originalname).toLowerCase();
     const isImage = ['.png', '.jpg', '.jpeg', '.gif', '.webp'].includes(ext);

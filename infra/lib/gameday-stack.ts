@@ -161,15 +161,24 @@ export class GameDayStack extends cdk.Stack {
     );
 
     // ── IAM: Bedrock権限 ──
-    // モデル選択 (Opus 4.6 / 4.7 / 4.8) に対応するため、Claude Opus 4系を
-    // ワイルドカードで許可する。特定バージョンに固定するとモデル切替時に
-    // AccessDeniedExceptionでLLM呼び出しが静かに失敗する（症状: AI分析レポートが空）。
+    // UI で選択可能なモデル（src/llm/bedrock-client.ts の SUPPORTED_MODELS）に対応する
+    // Claude Opus 4.6（既定）・Claude 5.5 系（Opus/Sonnet）・GPT-5.6 系をワイルドカードで許可する。
+    // 特定バージョンに固定するとモデル切替時に AccessDeniedException で LLM 呼び出しが
+    // 静かに失敗する（症状: AI分析レポートが空）。
+    // cross-region inference profile 経由の呼び出しは inference-profile と各リージョンの
+    // foundation-model の両方への許可が必要。
     taskDef.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
         actions: ['bedrock:InvokeModel', 'bedrock:Converse', 'bedrock:ConverseStream'],
         resources: [
-          `arn:aws:bedrock:*::foundation-model/anthropic.claude-opus-4-*`,
-          `arn:aws:bedrock:*:${this.account}:inference-profile/us.anthropic.claude-opus-4-*`,
+          `arn:aws:bedrock:*::foundation-model/anthropic.claude-opus-4-6*`,
+          `arn:aws:bedrock:*::foundation-model/anthropic.claude-opus-5-5*`,
+          `arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-5-5*`,
+          `arn:aws:bedrock:*::foundation-model/openai.gpt-5.6-*`,
+          `arn:aws:bedrock:*:${this.account}:inference-profile/us.anthropic.claude-opus-4-6*`,
+          `arn:aws:bedrock:*:${this.account}:inference-profile/us.anthropic.claude-opus-5-5*`,
+          `arn:aws:bedrock:*:${this.account}:inference-profile/us.anthropic.claude-sonnet-5-5*`,
+          `arn:aws:bedrock:*:${this.account}:inference-profile/us.openai.gpt-5.6-*`,
         ],
       }),
     );
@@ -385,10 +394,21 @@ export class GameDayStack extends cdk.Stack {
         'ECS ExecutionRole の ecr:GetAuthorizationToken と、Custom Resource の ec2:DescribeSecurityGroups はリソースレベル制限をサポートしないため * が必要',
       'AwsSolutions-IAM5[Resource::<OutputBucket7114EB27.Arn>/*]':
         '単一の出力バケット配下のオブジェクト操作に必要な資源ワイルドカード。バケット自体は限定済み',
-      [`AwsSolutions-IAM5[Resource::arn:aws:bedrock:*:${this.account}:inference-profile/us.anthropic.claude-opus-4-*]`]:
-        'UI で Claude Opus 4系のモデルを切り替えられるようにするための限定ワイルドカード（4系以外は不可）',
-      'AwsSolutions-IAM5[Resource::arn:aws:bedrock:*::foundation-model/anthropic.claude-opus-4-*]':
-        'UI で Claude Opus 4系のモデルを切り替えられるようにするための限定ワイルドカード（4系以外は不可）',
+      ...Object.fromEntries(
+        [
+          `arn:aws:bedrock:*::foundation-model/anthropic.claude-opus-4-6*`,
+          `arn:aws:bedrock:*::foundation-model/anthropic.claude-opus-5-5*`,
+          `arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-5-5*`,
+          `arn:aws:bedrock:*::foundation-model/openai.gpt-5.6-*`,
+          `arn:aws:bedrock:*:${this.account}:inference-profile/us.anthropic.claude-opus-4-6*`,
+          `arn:aws:bedrock:*:${this.account}:inference-profile/us.anthropic.claude-opus-5-5*`,
+          `arn:aws:bedrock:*:${this.account}:inference-profile/us.anthropic.claude-sonnet-5-5*`,
+          `arn:aws:bedrock:*:${this.account}:inference-profile/us.openai.gpt-5.6-*`,
+        ].map((arn) => [
+          `AwsSolutions-IAM5[Resource::${arn}]`,
+          'UI で選択可能なモデル（Claude Opus 4.6 / Claude 5.5 系 / GPT-5.6 系）に限定したワイルドカード。他のモデルは不可',
+        ]),
+      ),
     };
     for (const [id, reason] of Object.entries(nagAcknowledgments)) {
       acknowledgeRule(this, id, reason);

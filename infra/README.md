@@ -16,7 +16,7 @@ Internal ALB
 ECS Fargate (Node.js + Bedrock連携)
   ├→ DynamoDB  (SessionTable, TTL 7日)
   ├→ S3        (OutputBucket, lifecycle 7日)
-  └→ Bedrock   (Claude Opus 4.x, us.cross-region inference profile)
+  └→ Bedrock   (Claude Opus 4.6 / 5.5, Sonnet 5.5, GPT-5.6, us.cross-region inference profile)
 ```
 
 認証まわりの構成:
@@ -31,7 +31,7 @@ ECS Fargate (Node.js + Bedrock連携)
 - AWS CLI 設定済み
 - Node.js 20+
 - Docker（イメージビルド用）
-- AWS アカウントで Bedrock Claude Opus 4.x が有効化済み
+- AWS アカウントで Bedrock の利用モデル（Claude Opus 4.6 / Claude 5.5 系 / GPT-5.6 系）のモデルアクセスが有効化済み
 - CDK bootstrap 実施済み（初回のみ）: `npx cdk bootstrap`
 
 ## デプロイ
@@ -67,7 +67,7 @@ CDK が自動で設定:
 - `SESSION_TABLE_NAME=<動的>`
 - `OUTPUT_STORE=s3`
 - `OUTPUT_BUCKET_NAME=<動的>`
-- `BEDROCK_MODEL_ID=us.anthropic.claude-opus-4-6-v1`（デフォルト。Web UIでは 4.6 / 4.7 / 4.8 を選択可）
+- `BEDROCK_MODEL_ID=us.anthropic.claude-opus-4-6-v1`（デフォルト。Web UIでは Claude Opus 4.6 / Opus 5.5 / Sonnet 5.5、GPT-5.6 sol/terra/luna を選択可）
 
 ## コスト目安（月額）
 
@@ -77,7 +77,7 @@ CDK が自動で設定:
 - DynamoDB: オンデマンド（ほぼ無料）
 - S3: lifecycle 7日で削除、ほぼ無料
 - Cognito / Lambda@Edge: 少人数利用なら実質無料
-- Bedrock: Claude Opus 4.x（入力 $15/M tokens、出力 $75/M tokens）
+- Bedrock: 選択モデルの従量課金（最新単価は Amazon Bedrock の料金ページを参照）
 
 短期デモ用途であれば、Bedrock 呼び出しが支配的なコスト要因になります。
 

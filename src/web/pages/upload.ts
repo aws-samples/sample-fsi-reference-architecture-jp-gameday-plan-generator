@@ -4,6 +4,17 @@
 import type { SessionSummary } from '../session-store.js';
 import { mdToHtml } from '../../dashboard/markdown.js';
 import { renderTopNav, renderSideNav, navChromeCss } from './layout.js';
+import { SUPPORTED_MODELS, DEFAULT_MODEL_KEY } from '../../llm/bedrock-client.js';
+
+/** モデル選択の <option> 群を SUPPORTED_MODELS から生成（定義の二重管理を避ける） */
+function renderModelOptions(): string {
+  return Object.entries(SUPPORTED_MODELS)
+    .map(([key, m]) => {
+      const selected = key === DEFAULT_MODEL_KEY ? ' selected' : '';
+      return `<option value="${escHtml(key)}"${selected}>${escHtml(m.label)} — ${escHtml(m.description)}</option>`;
+    })
+    .join('\n                ');
+}
 
 function escHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -189,9 +200,7 @@ ${renderTopNav()}
             <label class="awsui-label" for="model">🤖 AIモデル <span class="awsui-label-required">*</span></label>
             <div class="awsui-select-wrap">
               <select name="model" id="model" class="awsui-select">
-                <option value="claude-opus-4-6" selected>Claude Opus 4.6 — バランス型・1Mコンテキスト</option>
-                <option value="claude-opus-4-7">Claude Opus 4.7 — 推論性能向上</option>
-                <option value="claude-opus-4-8">Claude Opus 4.8 — 最新・1Mコンテキスト</option>
+                ${renderModelOptions()}
               </select>
             </div>
             <div class="awsui-form-description">

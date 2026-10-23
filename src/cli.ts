@@ -21,6 +21,7 @@ import { generateEvaluationCriteria } from './evaluation/index.js';
 import { generate as generateDashboard } from './dashboard/index.js';
 import { runDemo } from './demo/index.js';
 import { generateLLMScenarios, enhanceScenarioDetails } from './llm/scenario-enhancer.js';
+import { SUPPORTED_MODELS, DEFAULT_MODEL_KEY } from './llm/bedrock-client.js';
 
 import type { PlanOptions, FISDeploymentInfo } from './types/index.js';
 
@@ -43,7 +44,7 @@ program
   .option('-o, --output <dir>', '出力ディレクトリ', './output')
   .option('-d, --duration <type>', '実施形式: half-day|full-day|two-day', 'full-day')
   .option('-p, --participants <n>', '参加者数', '6')
-  .option('--model <key>', 'AIモデル: claude-opus-4-6 | claude-opus-4-7 | claude-opus-4-8', 'claude-opus-4-6')
+  .option('--model <key>', `AIモデル: ${Object.keys(SUPPORTED_MODELS).join(' | ')}`, DEFAULT_MODEL_KEY)
   .option('--no-llm', 'AI強化を無効化（CLIのみ。デフォルトは有効）')
   .action(async (file: string, opts: { output: string; duration: string; participants: string; model: string; llm: boolean }) => {
     try {
